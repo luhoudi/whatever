@@ -1,0 +1,194 @@
+`ifndef MEMORY_TEST_SEQ_SV
+`define MEMORY_TEST_SEQ_SV
+
+class memory_test_sequence extends basic_vseq;
+    bit[63:0] write_mem = 'hFFFFFFFFFFFFFFFF;
+
+`uvm_object_utils_begin(memory_test_sequence)
+`uvm_object_utils_end
+
+    virtual task body();
+      
+      #2000;
+      jpt_power_on();
+      #100;
+
+//****NTU_tsg0*******//    
+      memory_select(0);
+      axi_write('hA52000AC, 'h100000000, axi_rw_sequence::WR64);
+      memory_write(256, 0);
+      memory_clear();
+      memory_compare(0, 0);
+//****NTU_tsg0*******//
+
+//****NTU_tsg1*******//    
+      memory_select(1);
+      axi_write('hA520016C, 'h100000000, axi_rw_sequence::WR64);
+      memory_write(256, 0);
+      memory_clear();
+      memory_compare(1, 0);
+//****NTU_tsg1*******//
+
+//****NTU_tsg2*******//    
+      memory_select(2);
+      axi_write('hA520022C, 'h100000000, axi_rw_sequence::WR64);
+      memory_write(256, 0);
+      memory_clear();
+      memory_compare(2, 0);
+//****NTU_tsg2*******//
+
+//****NTU_tsg3*******//    
+      memory_select(3);
+      axi_write('hA52002EC, 'h100000000, axi_rw_sequence::WR64);
+      memory_write(256, 0);
+      memory_clear();
+      memory_compare(3, 0);
+//****NTU_tsg3*******//
+
+//****Meas_buf*******//    
+      memory_select(11);
+      memory_write(86759, 0);
+      memory_clear();
+      memory_compare(11, 0);
+//****Meas_buf*******//
+
+//****SSB_rhh_buf*******//    
+      memory_select(12);
+      memory_write(97, 'h800);
+      memory_clear();
+      memory_compare(12, 'h800);
+
+      memory_select(12);
+      memory_write(97, 'hC00);
+      memory_clear();
+      memory_compare(12, 'hC00);
+
+      memory_select(12);
+      memory_write(97, 'h1000);
+      memory_clear();
+      memory_compare(12, 'h1000);
+
+      memory_select(12);
+      memory_write(97, 'h1400);
+      memory_clear();
+      memory_compare(12, 'h1400);
+//****SSB_rhh_buf*******//
+
+
+    endtask
+
+    task memory_select(int mem_sel_idx);
+        axi_write('hA5F00000, 'h1<<mem_sel_idx, axi_rw_sequence::WR32L);
+        //`uvm_info("memory_select()",$psprintf("MemorySelectSuccess type = %d",mem_sel_idx), UVM_LOW)
+    endtask
+
+    task memory_write(int mem_wr_num, int offset_addr);
+        for(int i=0; i<mem_wr_num; i++) begin
+            axi_write('hA5800000 + offset_addr + i*8, write_mem, axi_rw_sequence::WR64);
+            //`uvm_info("memory_select()",$psprintf("MemoryWriteSuccess-(%d)",i), UVM_LOW)
+        end
+        //`uvm_info("memory_select()",$psprintf("MemoryWriteSuccessTotle"), UVM_LOW)
+    endtask
+
+    task memory_clear();
+        axi_write('hA5F00000, 'h0, axi_rw_sequence::WR32L);
+    endtask
+
+    task memory_compare(int mem_cmp_idx, int mem_cmp_off);
+        case(mem_cmp_idx)
+            0:  memory_cmpchild(256,    31,     0,  mem_cmp_off);//depth-256, valid-31, NTU_tsg0-0
+            1:  memory_cmpchild(256,    31,     1,  mem_cmp_off);
+            2:  memory_cmpchild(256,    31,     2,  mem_cmp_off);
+            3:  memory_cmpchild(256,    31,     3,  mem_cmp_off);
+            11: memory_cmpchild(86759,  64,     11, mem_cmp_off);
+            16: memory_cmpchild(97,     24,     12, mem_cmp_off);
+            default:  $display("Unexpected input control!!!");
+        endcase
+    endtask
+
+    task memory_cmpchild(int mem_cmp_num, int mem_cmp_wid, int mem_sel, int mem_offset);
+        int error_num = 0;
+        int error_num_totle = 0;
+        logic[63:0] read_data;
+        axi_write('hA5F00000, 'h1<<mem_sel, axi_rw_sequence::WR32L);
+        for(int j=0; j<mem_cmp_num; j++) begin
+            axi_read('hA5800000 + mem_offset +j*8, read_data);
+            `uvm_info("mem_cmp()", $psprintf("Read_DaTa = 'b%b",read_data),UVM_LOW)
+            if(mem_sel != 11) begin
+                for(int k=0; k<mem_cmp_wid; k++) begin
+                    if(read_data[k] != write_mem[k]) begin
+                        `uvm_info("mem_cmp()", $psprintf("FAIL, MEM CMP ERROR type = %d num = %d addr = %d",mem_sel, j, k), UVM_LOW)
+                        `uvm_info("mem_cmp()", $psprintf("                                       data = %d",read_data[k]),  UVM_LOW)
+                        `uvm_info("mem_cmp()", $psprintf("                                   ref_data = %d",write_mem[k]),           UVM_LOW)
+                        error_num = error_num + 1;
+                        error_num_totle = error_num_totle + 1;
+                    end
+                end
+            end
+//**********MeasBuff*********//
+            if(mem_sel == 11) begin
+                //===========MA MD ME==========
+                if((j>=0 && j<1152) || (j>=85624 && j<86328) || (j>=86328)) begin
+                    for(int k=0; k<24; k++) begin
+                        if(read_data[k] != write_mem[k]) begin
+                            `uvm_info("mem_cmp()", $psprintf("FAIL, MEM CMP ERROR type = %d num = %d addr = %d",mem_sel, j, k), UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                       data = %d",read_data[k]),  UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                   ref_data = %d",write_mem[k]),           UVM_LOW)
+                            error_num = error_num + 1;
+                            error_num_totle = error_num_totle + 1;
+                        end
+                    end
+                    for(int k=32+0; k<32+24; k++) begin
+                        if(read_data[k] != write_mem[k]) begin
+                            `uvm_info("mem_cmp()", $psprintf("FAIL, MEM CMP ERROR type = %d num = %d addr = %d",mem_sel, j, k), UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                       data = %d",read_data[k]),  UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                   ref_data = %d",write_mem[k]),           UVM_LOW)
+                            error_num = error_num + 1;
+                            error_num_totle = error_num_totle + 1;
+                        end
+                    end
+                end
+                //===========MA MD ME==========
+
+                //===========MB MBX MC==========
+                if((j>=1152 && j<19152) || (j>=19152 && j<28152) || (j>=28152 && j<85624)) begin
+                    for(int k=0; k<16; k++) begin
+                        if(read_data[k] != write_mem[k]) begin
+                            `uvm_info("mem_cmp()", $psprintf("FAIL, MEM CMP ERROR type = %d num = %d addr = %d",mem_sel, j, k), UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                       data = %d",read_data[k]),  UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                   ref_data = %d",write_mem[k]),           UVM_LOW)
+                            error_num = error_num + 1;
+                            error_num_totle = error_num_totle + 1;
+                        end
+                    end
+                    for(int k=32+0; k<32+16; k++) begin
+                        if(read_data[k] != write_mem[k]) begin
+                            `uvm_info("mem_cmp()", $psprintf("FAIL, MEM CMP ERROR type = %d num = %d addr = %d",mem_sel, j, k), UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                       data = %d",read_data[k]),  UVM_LOW)
+                            `uvm_info("mem_cmp()", $psprintf("                                   ref_data = %d",write_mem[k]),           UVM_LOW)
+                            error_num = error_num + 1;
+                            error_num_totle = error_num_totle + 1;
+                        end
+                    end
+                end
+                //===========MB MBX MC==========
+            end
+//**********MeasBuff*********//
+
+            if(error_num != 0) begin
+                `uvm_info("mem_cmp()", $psprintf("type(%d) num(%d) ErrorNum = %d",mem_sel, j, error_num), UVM_LOW); end
+            if(error_num == 0) begin
+                `uvm_info("mem_cmp()", $psprintf("type(%d) num(%d) CMPSUCCESS",mem_sel, j), UVM_LOW); end
+            error_num = 0;
+        end
+        if(error_num_totle != 0)
+            `uvm_info("mem_cmp()", $psprintf("type(%d) ErrorNum_Totle = %d",mem_sel, error_num_totle), UVM_LOW);
+        if(error_num_totle == 0)
+            `uvm_info("mem_cmp()", $psprintf("type(%d) CMPSUCCESS",mem_sel), UVM_LOW);
+        error_num_totle = 0;
+        memory_clear();
+    endtask
+
+endclass:memory_test_sequence
+
+`endif
